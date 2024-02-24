@@ -4,6 +4,7 @@ from utils import limiter
 from slowapi.errors import RateLimitExceeded
 from fastapi.middleware.cors import CORSMiddleware
 import logging
+import uvicorn
 from logging_config import setup_logging
 from fastapi.responses import JSONResponse
 from custom_exceptions import DatabaseConnectionError, DataNotFoundError, ValidationError, AWSCredentialsError
@@ -83,3 +84,6 @@ async def aws_credentials_error_handler(request: Request, exc: AWSCredentialsErr
     )
 
 app.include_router(router, prefix='/api', tags=['accidents'])
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=10000)
