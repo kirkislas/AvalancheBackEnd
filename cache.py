@@ -5,7 +5,13 @@ import json
 import os
 
 # Initialize the Redis client asynchronously
-redis_client = Redis.from_url(os.environ.get('REDIS_URL'), encoding="utf-8", decode_responses=True)
+redis_client = Redis(
+    host=os.environ.get('REDIS_HOST'),
+    port=os.environ.get('REDIS_PORT'),
+    password=os.environ.get('REDIS_PASSWORD'),
+    encoding="utf-8",
+    decode_responses=True
+)
 
 async def get_cached_data(key):
     try:
