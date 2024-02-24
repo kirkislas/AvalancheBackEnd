@@ -20,7 +20,7 @@ app.add_middleware(
         "http://localhost:5500",
         "http://127.0.0.1:5500",
         "https://www.avalancheaccidentsusa.com",
-        "https://avalanchefrontend.onrender.com/"
+        "https://avalanchefrontend.onrender.com"
     ], 
     allow_credentials=True,
     allow_methods=["*"],
