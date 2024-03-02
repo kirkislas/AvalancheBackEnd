@@ -1,5 +1,5 @@
-from fastapi import FastAPI, Request
-from routers import router
+from fastapi import FastAPI, Request, Depends
+from routers import secure_router, public_router
 from utils import limiter 
 from slowapi.errors import RateLimitExceeded
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,8 +7,8 @@ import logging
 import uvicorn
 from logging_config import setup_logging
 from fastapi.responses import JSONResponse
-from custom_exceptions import DatabaseConnectionError, DataNotFoundError, ValidationError, AWSCredentialsError
-from security import SecurityHeadersMiddleware
+from custom_exceptions import DatabaseConnectionError, DataNotFoundError, ValidationError, AWSCredentialsError, InvalidAPIKeyError, CacheInvalidationError
+from security import SecurityHeadersMiddleware, api_key_auth
 
 
 app = FastAPI()
@@ -82,8 +82,24 @@ async def aws_credentials_error_handler(request: Request, exc: AWSCredentialsErr
         status_code=exc.status_code,
         content={"detail": exc.detail},
     )
+    
+@app.exception_handler(InvalidAPIKeyError)
+async def invalid_api_key_error_handler(request: Request, exc: InvalidAPIKeyError):
+    logging.error(f"Invalid API Key for request {request.url}: {exc.detail}", exc_info=True)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"message": exc.detail},
+    )
 
-app.include_router(router, prefix='/api', tags=['accidents'])
+@app.exception_handler(CacheInvalidationError)
+async def cache_invalidation_error_handler(request: Request, exc: CacheInvalidationError):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"message": exc.detail},
+    )
+
+app.include_router(secure_router, prefix='/api', tags=['secure endpoints'], dependencies=[Depends(api_key_auth)])
+app.include_router(public_router, prefix='/api', tags=['public endpoints'])
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=10000)

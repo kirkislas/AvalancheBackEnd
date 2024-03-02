@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import List, Optional
 
 class AccidentSchema(BaseModel):
     id: int
@@ -11,6 +12,8 @@ class AccidentSchema(BaseModel):
     latitude: float
     longitude: float
 
-
     class Config:
         from_attributes = True
+        
+class InvalidateCacheRequest(BaseModel):
+    keys: Optional[List[str]] = None

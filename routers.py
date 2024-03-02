@@ -1,23 +1,26 @@
 from fastapi import APIRouter, Depends, Request
 from typing import List
-from schemas import AccidentSchema
+from schemas import AccidentSchema, InvalidateCacheRequest
 from models import Accident 
 from sqlalchemy.future import select
 from utils import limiter
 from database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
-from custom_exceptions import DataNotFoundError, DatabaseConnectionError,  RedisConnectionError, AWSCredentialsError
-from cache import get_cached_data, set_cache_data
+from custom_exceptions import DataNotFoundError, DatabaseConnectionError,  RedisConnectionError, AWSCredentialsError, CacheInvalidationError
+from cache import get_cached_data, set_cache_data, redis_client
+from redis.exceptions import RedisError
+from security import api_key_auth
 from fastapi.responses import JSONResponse
 import logging
 import os
 import json
 
-router = APIRouter()
+secure_router = APIRouter()
+public_router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
-@router.get("/accidents/", response_model=List[AccidentSchema])
+@public_router.get("/accidents/", response_model=List[AccidentSchema])
 @limiter.limit("10/minute")
 async def read_accidents(request: Request, db: AsyncSession = Depends(get_db)):
     cache_key = "all_accidents"
@@ -54,7 +57,7 @@ async def read_accidents(request: Request, db: AsyncSession = Depends(get_db)):
         # This catches SQLAlchemy errors or any other unforeseen errors.
         raise DatabaseConnectionError(detail=str(e))
 
-@router.get("/accidents/{accident_id}", response_model=AccidentSchema)
+@public_router.get("/accidents/{accident_id}", response_model=AccidentSchema)
 @limiter.limit("20/minute")
 async def read_accident(request: Request, accident_id: int, db: AsyncSession = Depends(get_db)):
     cache_key = f"accident_{accident_id}"
@@ -83,7 +86,7 @@ async def read_accident(request: Request, accident_id: int, db: AsyncSession = D
         raise DatabaseConnectionError(detail=str(e))
     
     
-@router.get("/aws-credentials/")
+@public_router.get("/aws-credentials/")
 @limiter.limit("10/minute")
 async def get_aws_credentials(request: Request):
     cache_key = "aws_credentials"  # Define the cache key for AWS credentials
@@ -118,3 +121,19 @@ async def get_aws_credentials(request: Request):
     await set_cache_data(cache_key, aws_credentials, expiration=60*60)  # Expires after 1 hour
 
     return JSONResponse(content=aws_credentials)
+
+
+@secure_router.post("/invalidate-cache/")
+async def invalidate_cache(request: InvalidateCacheRequest, api_key: str = Depends(api_key_auth)):
+    try:
+        if request.keys:
+            # Invalidate specific cache keys
+            for key in request.keys:
+                await redis_client.delete(key)
+        else:
+            # Clear the entire cache (use with caution)
+            await redis_client.flushdb()
+        return {"message": "Cache invalidated successfully."}
+    except RedisError as e:
+        logger.exception(f"Redis error during cache invalidation: {e}")
+        raise CacheInvalidationError()

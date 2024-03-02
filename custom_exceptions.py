@@ -16,8 +16,15 @@ class ValidationError(HTTPException):
 class RedisConnectionError(HTTPException):
     def __init__(self, detail: str = "Redis connection failed"):
         super().__init__(status_code=500, detail=detail)
-        
 
 class AWSCredentialsError(HTTPException):
     def __init__(self, detail: str):
+        super().__init__(status_code=500, detail=detail)
+        
+class InvalidAPIKeyError(HTTPException):
+    def __init__(self, detail: str = "Invalid API Key"):
+        super().__init__(status_code=403, detail=detail)
+
+class CacheInvalidationError(HTTPException):
+    def __init__(self, detail: str = "Failed to invalidate cache"):
         super().__init__(status_code=500, detail=detail)
