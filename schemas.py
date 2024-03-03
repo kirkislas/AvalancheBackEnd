@@ -9,8 +9,8 @@ class AccidentSchema(BaseModel):
     location: str
     description: str
     fatalities: int
-    latitude: float
-    longitude: float
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
     class Config:
         from_attributes = True
