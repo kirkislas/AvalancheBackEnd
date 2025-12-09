@@ -89,38 +89,45 @@ async def read_accident(request: Request, accident_id: int, db: AsyncSession = D
 @public_router.get("/aws-credentials/")
 @limiter.limit("10/minute")
 async def get_aws_credentials(request: Request):
-    cache_key = "aws_credentials"  # Define the cache key for AWS credentials
+    cache_key = "aws_credentials"
+
+    logger.info("Hit /aws-credentials endpoint")
 
     try:
-        # Attempt to retrieve the AWS credentials from cache
         cached_credentials = await get_cached_data(cache_key)
         if cached_credentials is not None:
+            logger.info("Returning cached AWS credentials")
             return JSONResponse(content=cached_credentials)
     except RedisConnectionError as e:
-        # Log the Redis error or handle it as needed
         logger.exception(f"Redis connection error: {e}")
 
-    # If credentials are not cached, fetch from environment variables
     identity_pool_id = os.environ.get("identity_pool_id")
     identity_pool_region = os.environ.get("identity_pool_region")
     map_name = os.environ.get("map_name")
 
-    # Check if all required AWS credentials are available
+    logger.info(
+        f"ENV CHECK → identity_pool_id={identity_pool_id}, "
+        f"identity_pool_region={identity_pool_region}, map_name={map_name}"
+    )
+
     if not all([identity_pool_id, identity_pool_region, map_name]):
-        # Raise an exception if AWS credentials are not properly configured
+        logger.error("Missing required AWS environment variables.")
         raise AWSCredentialsError(detail="AWS credentials not configured properly.")
 
-    # Prepare and return the AWS credentials
     aws_credentials = {
         "identityPoolId": identity_pool_id,
         "region": identity_pool_region,
         "mapName": map_name
     }
 
-    # Cache the AWS credentials before returning
-    await set_cache_data(cache_key, aws_credentials, expiration=60*60)  # Expires after 1 hour
+    logger.info(f"Prepared AWS credentials: {aws_credentials}")
+
+    await set_cache_data(cache_key, aws_credentials, expiration=60*60)
+
+    logger.info("AWS credentials cached successfully")
 
     return JSONResponse(content=aws_credentials)
+
 
 
 @secure_router.post("/invalidate-cache/")
