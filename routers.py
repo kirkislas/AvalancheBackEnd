@@ -93,21 +93,22 @@ async def get_aws_credentials(request: Request):
 
     logger.info("Hit /aws-credentials endpoint")
 
-    try:
-        cached_credentials = await get_cached_data(cache_key)
-        if cached_credentials is not None:
-            logger.info("Returning cached AWS credentials")
-            return JSONResponse(content=cached_credentials)
-    except RedisConnectionError as e:
-        logger.exception(f"Redis connection error: {e}")
+    # Cache read (safe: cache.py will handle Redis errors internally)
+    cached_credentials = await get_cached_data(cache_key)
+    if cached_credentials is not None:
+        logger.info("Returning cached AWS credentials")
+        return JSONResponse(content=cached_credentials)
 
+    # Env vars
     identity_pool_id = os.environ.get("identity_pool_id")
     identity_pool_region = os.environ.get("identity_pool_region")
     map_name = os.environ.get("map_name")
 
     logger.info(
-        f"ENV CHECK → identity_pool_id={identity_pool_id}, "
-        f"identity_pool_region={identity_pool_region}, map_name={map_name}"
+        "ENV CHECK → identity_pool_id=%s, identity_pool_region=%s, map_name=%s",
+        identity_pool_id,
+        identity_pool_region,
+        map_name,
     )
 
     if not all([identity_pool_id, identity_pool_region, map_name]):
@@ -117,14 +118,14 @@ async def get_aws_credentials(request: Request):
     aws_credentials = {
         "identityPoolId": identity_pool_id,
         "region": identity_pool_region,
-        "mapName": map_name
+        "mapName": map_name,
     }
 
-    logger.info(f"Prepared AWS credentials: {aws_credentials}")
+    logger.info("Prepared AWS credentials payload")
 
-    await set_cache_data(cache_key, aws_credentials, expiration=60*60)
-
-    logger.info("AWS credentials cached successfully")
+    # Cache write (safe: won't throw; returns True/False)
+    cached_ok = await set_cache_data(cache_key, aws_credentials, expiration=60 * 60)
+    logger.info("AWS credentials cached: %s", cached_ok)
 
     return JSONResponse(content=aws_credentials)
 
