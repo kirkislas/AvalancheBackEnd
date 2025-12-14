@@ -7,7 +7,7 @@ from utils import limiter
 from database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from custom_exceptions import DataNotFoundError, DatabaseConnectionError,  RedisConnectionError, AWSCredentialsError, CacheInvalidationError
-from cache import get_cached_data, set_cache_data, redis_client
+from cache import get_cached_data, set_cache_data
 from redis.exceptions import RedisError
 from security import api_key_auth
 from fastapi.responses import JSONResponse
