@@ -1,114 +1,110 @@
 from fastapi import APIRouter, Depends, Request
 from typing import List
-from schemas import AccidentSchema, InvalidateCacheRequest
-from models import Accident 
-from sqlalchemy.future import select
-from utils import limiter
-from database import get_db
-from sqlalchemy.ext.asyncio import AsyncSession
-from custom_exceptions import DataNotFoundError, DatabaseConnectionError,  RedisConnectionError, AWSCredentialsError, CacheInvalidationError
-from cache import get_cached_data, set_cache_data
-from redis.exceptions import RedisError
-from security import api_key_auth
-from fastapi.responses import JSONResponse
 import logging
 import os
-import json
+
+from schemas import AccidentSchema, InvalidateCacheRequest
+from models import Accident
+from sqlalchemy.future import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from utils import limiter
+from database import get_db
+from security import api_key_auth
+
+from custom_exceptions import (
+    DataNotFoundError,
+    DatabaseConnectionError,
+    AWSCredentialsError,
+    CacheInvalidationError,
+)
+
+from cache import get_cached_data, set_cache_data, get_redis_client
+from redis.exceptions import RedisError
 
 secure_router = APIRouter()
 public_router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
+
 @public_router.get("/accidents/", response_model=List[AccidentSchema])
 @limiter.limit("10/minute")
 async def read_accidents(request: Request, db: AsyncSession = Depends(get_db)):
-    cache_key = "all_accidents"
-    try:
-        cached_accidents = await get_cached_data(cache_key)
-        if cached_accidents:
-            return json.loads(cached_accidents)
-    except RedisConnectionError as e:
-        # Log the Redis error or handle it as needed
-        logger.exception(f"Redis connection error: {e}")
+    cache_key = "accidents:all"
+
+    cached = await get_cached_data(cache_key)
+    if cached is not None:
+        return cached  # already a Python list[dict]
 
     try:
-        async with db as session:
-            query = select(Accident)
-            result = await session.execute(query)
-            accidents = result.scalars().all()
-            
-            if not accidents:
-                raise DataNotFoundError(detail="Accidents not found")
-            
-            accidents_data = [accident.to_dict() for accident in accidents]
-            
+        result = await db.execute(select(Accident))
+        accidents = result.scalars().all()
 
-            # Serialize and cache the results before returning them
-            await set_cache_data(
-    cache_key,
-    json.dumps(accidents_data),  # Assuming `to_dict` is a method on the `Accident` model
-    expiration=60*60  # Cache for 1 hour
-)
+        if not accidents:
+            raise DataNotFoundError(detail="Accidents not found")
 
-            return accidents_data
+        accidents_data = [a.to_dict() for a in accidents]
 
+        await set_cache_data(cache_key, accidents_data, expiration=60 * 60)
+        return accidents_data
+
+    except DataNotFoundError:
+        raise
     except Exception as e:
-        # This catches SQLAlchemy errors or any other unforeseen errors.
+        logger.exception("Unexpected error in read_accidents")
         raise DatabaseConnectionError(detail=str(e))
+
 
 @public_router.get("/accidents/{accident_id}", response_model=AccidentSchema)
 @limiter.limit("20/minute")
 async def read_accident(request: Request, accident_id: int, db: AsyncSession = Depends(get_db)):
-    cache_key = f"accident_{accident_id}"
-    try:
-        cached_accident = await get_cached_data(cache_key)
-        if cached_accident:
-            return json.loads(cached_accident)
-    except RedisConnectionError as e:
-        # Log the Redis error or handle it as needed
-        logger.exception(f"Redis connection error: {e}")
+    cache_key = f"accidents:{accident_id}"
+
+    cached = await get_cached_data(cache_key)
+    if cached is not None:
+        return cached  # already a dict
 
     try:
-        async with db as session:
-            stmt = select(Accident).where(Accident.id == accident_id)
-            result = await session.execute(stmt)
-            accident = result.scalars().first()
-            if not accident:
-                raise DataNotFoundError(detail="Accident not found")
+        result = await db.execute(select(Accident).where(Accident.id == accident_id))
+        accident = result.scalars().first()
 
-            # Serialize and cache the result before returning it
-            await set_cache_data(cache_key, json.dumps(dict(accident)), expiration=60*60)  # Cache for 1 hour
-            return accident
+        if not accident:
+            raise DataNotFoundError(detail="Accident not found")
 
+        accident_data = accident.to_dict()
+
+        await set_cache_data(cache_key, accident_data, expiration=60 * 60)
+        return accident_data
+
+    except DataNotFoundError:
+        raise
     except Exception as e:
-        # This catches SQLAlchemy errors or any other unforeseen errors.
+        logger.exception("Unexpected error in read_accident")
         raise DatabaseConnectionError(detail=str(e))
-    
-    
+
+
 @public_router.get("/aws-credentials/")
 @limiter.limit("10/minute")
 async def get_aws_credentials(request: Request):
-    cache_key = "aws_credentials"
+    cache_key = "config:aws_credentials"
 
-    logger.info("Hit /aws-credentials endpoint")
-
-    # Cache read (safe: cache.py will handle Redis errors internally)
+    # Cache read (safe: cache.py handles Redis errors internally)
     cached_credentials = await get_cached_data(cache_key)
     if cached_credentials is not None:
-        logger.info("Returning cached AWS credentials")
-        return JSONResponse(content=cached_credentials)
+        return cached_credentials
 
     # Env vars
     identity_pool_id = os.environ.get("identity_pool_id")
     identity_pool_region = os.environ.get("identity_pool_region")
     map_name = os.environ.get("map_name")
 
+    # Log presence only (avoid printing values into logs)
     logger.info(
         "ENV CHECK → identity_pool_id=%s, identity_pool_region=%s, map_name=%s",
-        identity_pool_id,
-        identity_pool_region,
-        map_name,
+        bool(identity_pool_id),
+        bool(identity_pool_region),
+        bool(map_name),
     )
 
     if not all([identity_pool_id, identity_pool_region, map_name]):
@@ -121,27 +117,31 @@ async def get_aws_credentials(request: Request):
         "mapName": map_name,
     }
 
-    logger.info("Prepared AWS credentials payload")
-
     # Cache write (safe: won't throw; returns True/False)
     cached_ok = await set_cache_data(cache_key, aws_credentials, expiration=60 * 60)
     logger.info("AWS credentials cached: %s", cached_ok)
 
-    return JSONResponse(content=aws_credentials)
-
+    return aws_credentials
 
 
 @secure_router.post("/invalidate-cache/")
 async def invalidate_cache(request: InvalidateCacheRequest, api_key: str = Depends(api_key_auth)):
+    client = await get_redis_client()
+
+    if client is None:
+        logger.warning("Cache invalidation requested, but Redis is unavailable.")
+        return {"message": "Redis not available; nothing to invalidate.", "cache_cleared": False}
+
     try:
         if request.keys:
-            # Invalidate specific cache keys
-            for key in request.keys:
-                await redis_client.delete(key)
+            # One command instead of one per key
+            await client.delete(*request.keys)
         else:
-            # Clear the entire cache (use with caution)
-            await redis_client.flushdb()
-        return {"message": "Cache invalidated successfully."}
+            # Clear entire cache (use with caution)
+            await client.flushdb()
+
+        return {"message": "Cache invalidated successfully.", "cache_cleared": True}
+
     except RedisError as e:
         logger.exception(f"Redis error during cache invalidation: {e}")
         raise CacheInvalidationError()
