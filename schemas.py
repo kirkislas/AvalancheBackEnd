@@ -1,7 +1,9 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 
 class AccidentSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     season: str
     date: str
@@ -12,8 +14,5 @@ class AccidentSchema(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
-    class Config:
-        from_attributes = True
-        
 class InvalidateCacheRequest(BaseModel):
     keys: Optional[List[str]] = None
