@@ -7,8 +7,8 @@ class AccidentSchema(BaseModel):
     date: str
     state: str
     location: str
-    description: str
-    fatalities: int
+    description: Optional[str] = None
+    fatalities: Optional[int] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
