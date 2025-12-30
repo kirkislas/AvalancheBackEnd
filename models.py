@@ -6,17 +6,25 @@ class Accident(Base):
     __tablename__ = "accidents_silver"
 
     id = Column(Integer, primary_key=True, index=True)
-    season = Column(String(50))  
-    date = Column(String(25))  
-    state = Column(String(50))  
-    location = Column(String)  
-    description = Column(String)  
-    fatalities = Column(Integer)  
+
+    source_id = Column(String, unique=True, index=True, nullable=False)
+
+    season = Column(String(50))
+    date = Column(String(10))          # YYYY-MM-DD
+    display_date = Column(String(10))  # MM-DD-YYYY
+
+    state = Column(String(50))
+    location = Column(String)
+
+    summary_description = Column(String)
+    full_description = Column(String)
+
+    fatalities = Column(Integer)
+
     latitude = Column(Float)
     longitude = Column(Float)
-    
+
+    refined_location = Column(String)
+
     def to_dict(self):
-    # Serialize the model instance to a dictionary
-    	return {
-        	column.name: getattr(self, column.name) for column in self.__table__.columns
-    }
+        return {column.name: getattr(self, column.name) for column in self.__table__.columns}
