@@ -28,26 +28,6 @@ public_router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
-MOUNTAIN_STATES = {
-    "AZ",
-    "CO",
-    "ID",
-    "MT",
-    "NV",
-    "NM",
-    "UT",
-    "WY",
-    "Arizona",
-    "Colorado",
-    "Idaho",
-    "Montana",
-    "Nevada",
-    "New Mexico",
-    "Utah",
-    "Wyoming",
-}
-
-
 @public_router.get("/accidents/", response_model=List[AccidentSchema])
 @limiter.limit("10/minute")
 async def read_accidents(request: Request, db: AsyncSession = Depends(get_db)):
@@ -65,7 +45,7 @@ async def read_accidents(request: Request, db: AsyncSession = Depends(get_db)):
                 Accident.summary_description.isnot(None),
                 Accident.latitude.isnot(None),
                 Accident.longitude.isnot(None),
-                Accident.state.in_(MOUNTAIN_STATES),
+                Accident.display_date.isnot(None),
             )
             .order_by(desc(Accident.date), Accident.source_id)
         )
@@ -89,14 +69,22 @@ async def read_accidents(request: Request, db: AsyncSession = Depends(get_db)):
 @public_router.get("/accidents/{accident_id}", response_model=AccidentSchema)
 @limiter.limit("20/minute")
 async def read_accident(request: Request, accident_id: int, db: AsyncSession = Depends(get_db)):
-    cache_key = f"accidents:{accident_id}"
+    cache_key = f"accidents:silver:v2:{accident_id}"
 
     cached = await get_cached_data(cache_key)
     if cached is not None:
         return cached  # already a dict
 
     try:
-        result = await db.execute(select(Accident).where(Accident.id == accident_id))
+        result = await db.execute(
+            select(Accident).where(
+                Accident.id == accident_id,
+                Accident.summary_description.isnot(None),
+                Accident.latitude.isnot(None),
+                Accident.longitude.isnot(None),
+                Accident.display_date.isnot(None),
+            )
+        )
         accident = result.scalars().first()
 
         if not accident:
