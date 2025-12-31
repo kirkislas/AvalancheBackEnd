@@ -5,6 +5,7 @@ import os
 
 from schemas import AccidentSchema, InvalidateCacheRequest
 from models import Accident
+from sqlalchemy import desc
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,18 +28,47 @@ public_router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
+MOUNTAIN_STATES = {
+    "AZ",
+    "CO",
+    "ID",
+    "MT",
+    "NV",
+    "NM",
+    "UT",
+    "WY",
+    "Arizona",
+    "Colorado",
+    "Idaho",
+    "Montana",
+    "Nevada",
+    "New Mexico",
+    "Utah",
+    "Wyoming",
+}
+
 
 @public_router.get("/accidents/", response_model=List[AccidentSchema])
 @limiter.limit("10/minute")
 async def read_accidents(request: Request, db: AsyncSession = Depends(get_db)):
-    cache_key = "accidents:all"
+    # Versioned key keeps older cached shapes separate from the silver v2 contract.
+    cache_key = "accidents:silver:v2"
 
     cached = await get_cached_data(cache_key)
     if cached is not None:
         return cached  # already a Python list[dict]
 
     try:
-        result = await db.execute(select(Accident))
+        result = await db.execute(
+            select(Accident)
+            .where(
+                Accident.summary_description.isnot(None),
+                Accident.latitude.isnot(None),
+                Accident.longitude.isnot(None),
+                Accident.state.in_(MOUNTAIN_STATES),
+            )
+            .order_by(desc(Accident.date), Accident.source_id)
+        )
         accidents = result.scalars().all()
 
         if not accidents:
