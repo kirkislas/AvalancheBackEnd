@@ -56,7 +56,7 @@ async def database_connection_error_handler(request: Request, exc: DatabaseConne
     logging.error(f"Database connection error for request {request.url}: {exc.detail}", exc_info=True)
     return JSONResponse(
         status_code=exc.status_code,
-        content={"message": exc.detail},
+        content={"message": "Database connection failed"},
     )
 
 @app.exception_handler(DataNotFoundError)

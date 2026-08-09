@@ -10,7 +10,7 @@ ASYNC_DATABASE_URL = os.environ.get('ASYNC_DATABASE_URL')
 Base = declarative_base()
 
 # Create an asynchronous engine instance
-engine = create_async_engine(ASYNC_DATABASE_URL, echo=True)
+engine = create_async_engine(ASYNC_DATABASE_URL, echo=False)
 
 # Create a sessionmaker, binding the async engine
 # The class_ parameter is set to AsyncSession to enable async session operations

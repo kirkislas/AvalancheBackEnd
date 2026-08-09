@@ -3,6 +3,7 @@ from fastapi import Security
 from custom_exceptions import InvalidAPIKeyError
 from fastapi.security.api_key import APIKeyHeader
 import os
+import secrets
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -19,6 +20,6 @@ API_KEY_NAME = "access_token"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 async def api_key_auth(api_key: str = Security(api_key_header)):
-    if api_key != FAST_API_KEY:
+    if not FAST_API_KEY or not api_key or not secrets.compare_digest(api_key, FAST_API_KEY):
         raise InvalidAPIKeyError()
-    return True  
+    return True

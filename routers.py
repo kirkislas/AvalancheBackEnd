@@ -63,7 +63,7 @@ async def read_accidents(request: Request, db: AsyncSession = Depends(get_db)):
         raise
     except Exception as e:
         logger.exception("Unexpected error in read_accidents")
-        raise DatabaseConnectionError(detail=str(e))
+        raise DatabaseConnectionError()
 
 
 @public_router.get("/accidents/{accident_id}", response_model=AccidentSchema)
@@ -99,7 +99,7 @@ async def read_accident(request: Request, accident_id: int, db: AsyncSession = D
         raise
     except Exception as e:
         logger.exception("Unexpected error in read_accident")
-        raise DatabaseConnectionError(detail=str(e))
+        raise DatabaseConnectionError()
 
 
 @public_router.get("/aws-credentials/")
@@ -155,8 +155,10 @@ async def invalidate_cache(request: InvalidateCacheRequest, api_key: str = Depen
             # One command instead of one per key
             await client.delete(*request.keys)
         else:
-            # Clear entire cache (use with caution)
-            await client.flushdb()
+            cache_keys = ["accidents:silver:v2"]
+            async for key in client.scan_iter(match="accidents:silver:v2:*"):
+                cache_keys.append(key)
+            await client.delete(*cache_keys)
 
         return {"message": "Cache invalidated successfully.", "cache_cleared": True}
 
